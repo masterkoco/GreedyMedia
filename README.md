@@ -16,10 +16,9 @@ ALSO IF YOU WANT TO HELP ME WITH A COFFEE
 
 ### 🐧 Linux Quick Terminal Installation (Recommended)
 If you are running Linux, you can instantly install the program, register its dependencies, and create a system application menu shortcut using a single terminal command:
-
-``bash
-curl -sSL https://raw.githubusercontent.com/masterkoco/GreedyMedia/main/install.sh
-
+```bash
+curl -sSL [https://raw.githubusercontent.com/masterkoco/GreedyMedia/main/install.sh](https://raw.githubusercontent.com/masterkoco/GreedyMedia/main/install.sh) | sudo bash
+```
 # 🚀 LOOKING FOR THE Windows Release?
 ### **[HEAD OVER TO GITHUB RELEASES TO DOWNLOAD THE WINDOWS RELEASE (.EXE) !](https://github.com/masterkoco/GreedyMedia/releases)**
 *(No coding required—just download the latest release and run it!)*
