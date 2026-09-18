@@ -19,8 +19,11 @@ If you are running Linux, you can instantly install the program, register its de
 ```bash
 curl -sSL [https://raw.githubusercontent.com/masterkoco/GreedyMedia/main/install.sh](https://raw.githubusercontent.com/masterkoco/GreedyMedia/main/install.sh) | sudo bash
 ```
-# 🚀 LOOKING FOR THE Windows Release?
-### **[HEAD OVER TO GITHUB RELEASES TO DOWNLOAD THE WINDOWS RELEASE (.EXE) !](https://github.com/masterkoco/GreedyMedia/releases)**
+# 🚀 LOOKING FOR THE Windows Release? 
+**click here:** [click here for windows EXE ](https://github.com/masterkoco/GreedyMedia/releases/download/v1.0.0/GreedyMediaUtility_Setup_v1.0.0.exe) 
+
+###  JUST IN CASE I GET LAZY AND FORGET AND UPDATE HERE IS THE DIRECT LINK TO THE PROGRAM
+**[HEAD OVER TO GITHUB RELEASES TO DOWNLOAD THE WINDOWS RELEASE (.EXE) !](https://github.com/masterkoco/GreedyMedia/releases)**
 *(No coding required—just download the latest release and run it!)*
 
 ---
