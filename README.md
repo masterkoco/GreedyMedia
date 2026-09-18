@@ -2,11 +2,26 @@
 
 A feature-rich, desktop-based media management and batch-encoding suite built in Python (`tkinter` & `FFmpeg`). Designed specifically for video and anime archivists, **Greedy Media Utility** allows you to compress large media libraries into space-efficient formats (such as 10-bit AV1 or HEVC) while automatically organizing, renaming, and fetching canonical metadata from official databases.
 
+THIS PROGRAM IS FREE TO USE
+IT COMPRESSES FILES TO MINI AV1 OR YOUR PREFERRED FORMAT INTO TINY FILES SO YOU CAN SAVE THAT HARD DRIVE SPACE, I PERSONALLY USE IT FOR JELLYFIN 
+IT WORKS AMAZING IT ALSO SCRAPES THE EPISODES USING TVDB (YOU WILL NEED TO GRAB YOUR TVDB API TAKES ABOUT 30 SECS)
+FOR SHOWS WITH MULTIPLE LISTINGS YOU CAN TRY THE YEAR AFTER THE NAME OR MY PREFERRED WAY IS TO GRAB THE SHOW ID NUMBER AND PASTE IT INSTEAD OF THE NAME
+PLEASE REPORT ANY BUGS AND ISSUES AND ANY FEATURES YOU WOULD LIKE ADDED
+
+ALSO IF YOU WANT TO HELP ME WITH A COFFEE 
+*   **PayPal:** [Click here to donate and support development](https://www.paypal.com/donate/?hosted_button_id=LUT2LHRKQ27LN)
+
 ---
 ## 📥 Download & Installation
 
-# 🚀 LOOKING FOR THE READY-TO-USE PROGRAMS?
-### **[HEAD OVER TO GITHUB RELEASES TO DOWNLOAD THE WINDOWS (.EXE) & LINUX INSTALLERS!](https://github.com/masterkoco/GreedyMedia/releases)**
+### 🐧 Linux Quick Terminal Installation (Recommended)
+If you are running Linux, you can instantly install the program, register its dependencies, and create a system application menu shortcut using a single terminal command:
+
+``bash
+curl -sSL https://raw.githubusercontent.com/masterkoco/GreedyMedia/main/install.sh
+
+# 🚀 LOOKING FOR THE Windows Release?
+### **[HEAD OVER TO GITHUB RELEASES TO DOWNLOAD THE WINDOWS RELEASE (.EXE) !](https://github.com/masterkoco/GreedyMedia/releases)**
 *(No coding required—just download the latest release and run it!)*
 
 ---
