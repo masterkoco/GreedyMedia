@@ -13,14 +13,21 @@ import shutil
 import re
 import datetime
 import webbrowser
+import traceback
 import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog, filedialog
 
+# Attempt to load Pillow, and automatically install it if missing
 try:
     from PIL import Image, ImageTk
     PIL_AVAILABLE = True
 except ImportError:
-    PIL_AVAILABLE = False
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "Pillow"])
+        from PIL import Image, ImageTk
+        PIL_AVAILABLE = True
+    except Exception:
+        PIL_AVAILABLE = False
 
 # Resource path helper for PyInstaller bundled files
 def resource_path(relative_path):
@@ -201,16 +208,21 @@ class BulkRenameAndFolderDialog(tk.Toplevel):
         case_cb.grid(row=6, column=1, sticky="w", padx=4, pady=4)
         case_cb.bind("<<ComboboxSelected>>", self._update_renamer_preview)
 
+        ttk.Label(tab, text="Place in New Parent Folder:").grid(row=7, column=0, sticky="w", pady=4)
+        self.parent_folder_var = tk.StringVar()
+        self.parent_folder_var.trace_add("write", self._update_renamer_preview)
+        ttk.Entry(tab, textvariable=self.parent_folder_var, foreground="#000000").grid(row=7, column=1, sticky="ew", padx=4, pady=4)
+
         preview_frame = ttk.LabelFrame(tab, text=" Live Bulk Rename Preview ", padding=6)
-        preview_frame.grid(row=7, column=0, columnspan=2, sticky="nsew", pady=(4, 8))
-        tab.rowconfigure(7, weight=1)
+        preview_frame.grid(row=8, column=0, columnspan=2, sticky="nsew", pady=(4, 8))
+        tab.rowconfigure(8, weight=1)
 
         cols = ("orig", "new")
         self.renamer_tree = ttk.Treeview(preview_frame, columns=cols, show="headings")
         self.renamer_tree.heading("orig", text="Original Filename")
-        self.renamer_tree.heading("new", text="Renamed Preview")
-        self.renamer_tree.column("orig", width=300, anchor="w")
-        self.renamer_tree.column("new", width=440, anchor="w")
+        self.renamer_tree.heading("new", text="Target Path & Renamed Preview")
+        self.renamer_tree.column("orig", width=280, anchor="w")
+        self.renamer_tree.column("new", width=460, anchor="w")
 
         scroll = ttk.Scrollbar(preview_frame, orient=tk.VERTICAL, command=self.renamer_tree.yview)
         self.renamer_tree.configure(yscroll=scroll.set)
@@ -218,7 +230,7 @@ class BulkRenameAndFolderDialog(tk.Toplevel):
         scroll.pack(side=tk.RIGHT, fill=tk.Y)
 
         btn_box = ttk.Frame(tab)
-        btn_box.grid(row=8, column=0, columnspan=2, sticky="e")
+        btn_box.grid(row=9, column=0, columnspan=2, sticky="e")
 
         ttk.Button(btn_box, text="Cancel", command=self.destroy).pack(side=tk.RIGHT, padx=(4, 0))
         ttk.Button(btn_box, text="Apply Names to Queue", style="Accent.TButton", command=self._apply_queue).pack(side=tk.RIGHT, padx=(4, 0))
@@ -236,6 +248,7 @@ class BulkRenameAndFolderDialog(tk.Toplevel):
         replace_txt = self.replace_var.get()
         use_regex = self.regex_var.get()
         case_mode = self.case_var.get()
+        parent_folder = self.parent_folder_var.get().strip()
 
         try:
             del_front = int(self.del_front_var.get())
@@ -285,8 +298,15 @@ class BulkRenameAndFolderDialog(tk.Toplevel):
                 final_base = final_base.lower()
 
             new_name = f"{final_base}{ext}"
-            self.preview_map.append({"item_id": item["item_id"], "path": item["path"], "new_name": new_name})
-            self.renamer_tree.insert("", tk.END, values=(orig, new_name))
+            display_name = f"{parent_folder}/{new_name}" if parent_folder else new_name
+            
+            self.preview_map.append({
+                "item_id": item["item_id"], 
+                "path": item["path"], 
+                "new_name": new_name, 
+                "show_folder": parent_folder
+            })
+            self.renamer_tree.insert("", tk.END, values=(orig, display_name))
 
     def _apply_queue(self):
         self.rename_disk_immediately = False
@@ -466,6 +486,8 @@ class SmartTVDBRenamerDialog(tk.Toplevel):
                 self.sep_var.set(s["separator"])
             if "include_title" in s:
                 self.include_title_var.set(s["include_title"])
+            if "create_show_folder" in s:
+                self.create_show_folder_var.set(s["create_show_folder"])
             if s.get("start_season"):
                 self.start_season_var.set(s["start_season"])
             if s.get("start_ep"):
@@ -480,6 +502,7 @@ class SmartTVDBRenamerDialog(tk.Toplevel):
                 "padding": self.padding_var.get(),
                 "separator": self.sep_var.get(),
                 "include_title": self.include_title_var.get(),
+                "create_show_folder": self.create_show_folder_var.get(),
                 "start_season": self.start_season_var.get(),
                 "start_ep": self.start_ep_var.get()
             }
@@ -553,18 +576,21 @@ class SmartTVDBRenamerDialog(tk.Toplevel):
         start_ep_spin.grid(row=2, column=3, sticky="w", padx=4, pady=(6, 2))
         start_ep_spin.bind("<KeyRelease>", self._update_preview)
 
+        self.create_show_folder_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(se_frame, text="Create Parent Folder for Show (e.g. Show Name/Season 01/)", variable=self.create_show_folder_var, command=self._update_preview).grid(row=3, column=0, columnspan=4, sticky="w", pady=(6, 2))
+
         preview_frame = ttk.LabelFrame(main_frame, text=" Live Canonical TVDB v4 English Season-Structured Preview ", padding=6)
         preview_frame.grid(row=4, column=0, columnspan=3, sticky="nsew", pady=(0, 8))
         main_frame.rowconfigure(4, weight=1)
 
-        cols = ("orig", "season_folder", "new")
+        cols = ("orig", "target_folder", "new")
         self.tree = ttk.Treeview(preview_frame, columns=cols, show="headings")
         self.tree.heading("orig", text="Original Filename / Queue Order")
-        self.tree.heading("season_folder", text="Season Folder")
+        self.tree.heading("target_folder", text="Target Folder Structure")
         self.tree.heading("new", text="TheTVDB English Canonical Formatted Preview")
-        self.tree.column("orig", width=280, anchor="w")
-        self.tree.column("season_folder", width=110, anchor="center")
-        self.tree.column("new", width=410, anchor="w")
+        self.tree.column("orig", width=270, anchor="w")
+        self.tree.column("target_folder", width=160, anchor="center")
+        self.tree.column("new", width=370, anchor="w")
 
         scroll = ttk.Scrollbar(preview_frame, orient=tk.VERTICAL, command=self.tree.yview)
         self.tree.configure(yscroll=scroll.set)
@@ -624,6 +650,7 @@ class SmartTVDBRenamerDialog(tk.Toplevel):
                     f.write("-" * 60 + "\n\n")
                     for item in self.preview_map:
                         f.write(f"Original Path : {item['path']}\n")
+                        f.write(f"Show Folder   : {item.get('show_folder', 'N/A')}\n")
                         f.write(f"Season Folder : {item.get('season_folder', 'N/A')}\n")
                         f.write(f"Proposed Name : {item['new_name']}\n")
                         f.write(f"Skipped (Special): {item.get('is_skipped', False)}\n")
@@ -776,8 +803,12 @@ class SmartTVDBRenamerDialog(tk.Toplevel):
         if not raw_show_prefix or raw_show_prefix.isdigit() or len(raw_show_prefix) <= 2:
             raw_show_prefix = "Show"
         
-        clean_show_prefix = re.sub(r'[\\/*?:"<>|]', "", raw_show_prefix)
+        clean_show_prefix = re.sub(r'[\\/*?:"<>|]', "", raw_show_prefix).strip()
+        if not clean_show_prefix:
+            clean_show_prefix = "Show"
+
         series_prefix = f"{clean_show_prefix} "
+        create_show_folder = self.create_show_folder_var.get()
         
         use_3_digits = "3 Digits" in self.padding_var.get()
         separator = self.sep_var.get()
@@ -817,7 +848,7 @@ class SmartTVDBRenamerDialog(tk.Toplevel):
                     new_name = orig
                     self.preview_map.append({
                         "item_id": item["item_id"], "path": item["path"], 
-                        "new_name": new_name, "season_folder": season_folder, "is_skipped": True
+                        "new_name": new_name, "season_folder": season_folder, "show_folder": "", "is_skipped": True
                     })
                     self.tree.insert("", tk.END, values=(orig, season_folder, new_name))
                     continue
@@ -835,6 +866,8 @@ class SmartTVDBRenamerDialog(tk.Toplevel):
                     raw_title = self.fetched_episodes_list[mapped_idx]["title"]
 
             season_folder = f"Season {season_num:02d}"
+            target_folder_display = f"{clean_show_prefix}/{season_folder}" if create_show_folder else season_folder
+            
             season_str = f"S{season_num:02d}"
             ep_str = f"E{ep_num:03d}" if use_3_digits else f"E{ep_num:02d}"
             se_tag = f"{season_str}{ep_str}"
@@ -850,9 +883,10 @@ class SmartTVDBRenamerDialog(tk.Toplevel):
                 "path": item["path"], 
                 "new_name": new_name,
                 "season_folder": season_folder,
+                "show_folder": clean_show_prefix if create_show_folder else "",
                 "is_skipped": False
             })
-            self.tree.insert("", tk.END, values=(orig, season_folder, new_name))
+            self.tree.insert("", tk.END, values=(orig, target_folder_display, new_name))
 
     def _apply_queue(self):
         self._save_dialog_settings()
@@ -965,10 +999,15 @@ class GreedyMediaApp(tk.Tk):
         self.geometry("980x800")
         self.minsize(860, 680)
 
+        # Setup Global Error Hook for Automatic Logging
+        sys.excepthook = self._global_exception_handler
+
         self.app_dir = os.path.dirname(os.path.abspath(__file__))
         
         self.user_data_dir = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "GreedyMediaUtility")
         os.makedirs(self.user_data_dir, exist_ok=True)
+        self.bin_dir = os.path.join(self.user_data_dir, "bin")
+        os.makedirs(self.bin_dir, exist_ok=True)
 
         self.logs_dir = os.path.join(self.user_data_dir, "logs")
         self.config_path = os.path.join(self.user_data_dir, "settings.json")
@@ -976,7 +1015,12 @@ class GreedyMediaApp(tk.Tk):
 
         session_time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         self.session_log_path = os.path.join(self.logs_dir, f"greedymedia_session_{session_time}.log")
+        self.rename_log_path = os.path.join(self.logs_dir, "rename_history.log")
 
+        # Custom explicit binary link paths (Loaded from settings)
+        self.custom_ffmpeg_path = ""
+        self.custom_ffprobe_path = ""
+        
         self.ffmpeg_path = shutil.which("ffmpeg") or "ffmpeg"
         self.ffprobe_path = shutil.which("ffprobe") or "ffprobe"
 
@@ -1000,9 +1044,13 @@ class GreedyMediaApp(tk.Tk):
             "padding": "2 Digits (E01, E02)",
             "separator": " - ",
             "include_title": True,
+            "create_show_folder": True,
             "start_season": "1",
             "start_ep": "1"
         }
+
+        self.ffmpeg_path_var = tk.StringVar(value="")
+        self.ffprobe_path_var = tk.StringVar(value="")
 
         self._build_ui()
         self._init_styles()
@@ -1011,10 +1059,32 @@ class GreedyMediaApp(tk.Tk):
         self.log("⚡ Greedy Media Utility initialized.")
         self.log(f"📁 Log session saved to: {self.session_log_path}")
 
+        # Run binary checks asynchronously in a background thread to prevent GUI freezing
+        threading.Thread(target=self._auto_resolve_binaries_worker, daemon=True).start()
+
         # Trigger startup flashing animation for the golden donate button
         self.after(500, lambda: self._flash_donate_button(6))
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    def _global_exception_handler(self, exc_type, exc_value, exc_traceback):
+        """Automatically log unhandled exceptions to file and show notice."""
+        err_msg = "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
+        self.log(f"❌ UNHANDLED EXCEPTION:\n{err_msg}")
+        try:
+            messagebox.showerror("Critical Error", f"An unexpected error occurred:\n{exc_value}\n\nCheck logs for details.")
+        except Exception:
+            pass
+
+    def log_rename_action(self, old_path, new_path, status):
+        """Dedicated rename logger to track all renaming/organization details."""
+        timestamp = datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+        entry = f"{timestamp} | STATUS: {status} | FROM: {old_path} | TO: {new_path}\n"
+        try:
+            with open(self.rename_log_path, "a", encoding="utf-8") as f:
+                f.write(entry)
+        except Exception as e:
+            self.log(f"⚠️ Failed to write rename log: {e}")
 
     def _init_styles(self):
         self.style = ttk.Style(self)
@@ -1123,6 +1193,10 @@ class GreedyMediaApp(tk.Tk):
         donate_btn = ttk.Button(header_right_frame, text="💖 Donate & Support", style="FancyDonate.TButton", command=self.open_donate_link)
         donate_btn.pack(side=tk.LEFT, padx=(0, 8))
 
+        # Discrete Binaries popup button
+        bin_btn = ttk.Button(header_right_frame, text="🛠️ Binaries", command=self._open_binary_settings)
+        bin_btn.pack(side=tk.LEFT, padx=(0, 6))
+
         save_cfg_btn = ttk.Button(header_right_frame, text="💾 Save Settings", command=self.save_settings)
         save_cfg_btn.pack(side=tk.LEFT, padx=(0, 6))
 
@@ -1176,10 +1250,10 @@ class GreedyMediaApp(tk.Tk):
         collision_cb = ttk.Combobox(config_frame, textvariable=self.collision_var, values=collision_options, state="readonly")
         collision_cb.grid(row=3, column=1, columnspan=2, sticky="ew", padx=(8, 0), pady=2)
 
-        self.toggle_adv_btn = ttk.Button(config_frame, text="▶ Show Advanced Transcode & Track Settings", command=self._toggle_advanced_settings)
-        self.toggle_adv_btn.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(6, 2))
+        self.toggle_adv_btn = ttk.Button(main_frame, text="▶ Show Advanced Transcode & Track Settings", command=self._toggle_advanced_settings)
+        self.toggle_adv_btn.pack(fill=tk.X, pady=(2, 6))
 
-        self.adv_frame = ttk.Frame(config_frame)
+        self.adv_frame = ttk.Frame(main_frame)
         self.adv_frame.columnconfigure(1, weight=1)
 
         ttk.Label(self.adv_frame, text="Encoder Engine:").grid(row=0, column=0, sticky="w", pady=2)
@@ -1346,6 +1420,115 @@ class GreedyMediaApp(tk.Tk):
         self.log_text = tk.Text(log_frame, height=4, bg="#090305", fg="#ff4d4d", font=("Consolas", 8, "bold"), relief="flat")
         self.log_text.pack(fill=tk.BOTH, expand=True)
 
+    def _open_binary_settings(self):
+        """Opens a discrete dialog for linking custom FFmpeg and FFprobe binaries."""
+        dlg = tk.Toplevel(self)
+        dlg.title("🛠️ FFmpeg Settings")
+        dlg.geometry("540x160")
+        dlg.minsize(540, 160)
+        
+        t = THEMES[self.current_theme_name]
+        dlg.configure(bg=t["bg"])
+        dlg.transient(self)
+        dlg.grab_set()
+
+        main_f = ttk.LabelFrame(dlg, text=" Custom Executable Linking ", padding=10)
+        main_f.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        main_f.columnconfigure(1, weight=1)
+
+        ttk.Label(main_f, text="FFmpeg Path:").grid(row=0, column=0, sticky="w", pady=4)
+        ttk.Entry(main_f, textvariable=self.ffmpeg_path_var, foreground="#000000").grid(row=0, column=1, sticky="ew", padx=6, pady=4)
+        ttk.Button(main_f, text="Browse...", command=self._browse_ffmpeg).grid(row=0, column=2, padx=4, pady=4)
+
+        ttk.Label(main_f, text="FFprobe Path:").grid(row=1, column=0, sticky="w", pady=4)
+        ttk.Entry(main_f, textvariable=self.ffprobe_path_var, foreground="#000000").grid(row=1, column=1, sticky="ew", padx=6, pady=4)
+        ttk.Button(main_f, text="Browse...", command=self._browse_ffprobe).grid(row=1, column=2, padx=4, pady=4)
+        
+        ttk.Label(main_f, text="(Leave blank to use auto-downloaded binaries or system PATH)", foreground="#888888").grid(row=2, column=0, columnspan=3, pady=(6, 0), sticky="w")
+
+
+    def _browse_ffmpeg(self):
+        f = filedialog.askopenfilename(title="Select ffmpeg executable", filetypes=[("Executables", "*.exe" if sys.platform == "win32" else "*")])
+        if f:
+            self.ffmpeg_path_var.set(f)
+            self.custom_ffmpeg_path = f
+            self.ffmpeg_path = f
+            self.log(f"Linked custom FFmpeg: {f}")
+
+    def _browse_ffprobe(self):
+        f = filedialog.askopenfilename(title="Select ffprobe executable", filetypes=[("Executables", "*.exe" if sys.platform == "win32" else "*")])
+        if f:
+            self.ffprobe_path_var.set(f)
+            self.custom_ffprobe_path = f
+            self.ffprobe_path = f
+            self.log(f"Linked custom FFprobe: {f}")
+
+    def _auto_resolve_binaries_worker(self):
+        """Background thread to auto-find or download ffmpeg/ffprobe to prevent startup freezing."""
+        exe_ext = ".exe" if sys.platform == "win32" else ""
+        
+        candidates_ffmpeg = [
+            self.custom_ffmpeg_path,
+            os.path.join(self.app_dir, f"ffmpeg{exe_ext}"),
+            os.path.join(self.bin_dir, f"ffmpeg{exe_ext}"),
+            shutil.which("ffmpeg") or ""
+        ]
+
+        candidates_ffprobe = [
+            self.custom_ffprobe_path,
+            os.path.join(self.app_dir, f"ffprobe{exe_ext}"),
+            os.path.join(self.bin_dir, f"ffprobe{exe_ext}"),
+            shutil.which("ffprobe") or ""
+        ]
+
+        resolved_ffmpeg = next((p for p in candidates_ffmpeg if p and os.path.exists(p)), "")
+        resolved_ffprobe = next((p for p in candidates_ffprobe if p and os.path.exists(p)), "")
+
+        if not resolved_ffmpeg or not resolved_ffprobe:
+            self.log("⚠️ FFmpeg / FFprobe not found locally. Starting background auto-downloader...")
+            success = self._download_ffmpeg_automatically()
+            if success:
+                resolved_ffmpeg = os.path.join(self.bin_dir, f"ffmpeg{exe_ext}")
+                resolved_ffprobe = os.path.join(self.bin_dir, f"ffprobe{exe_ext}")
+
+        self.ffmpeg_path = resolved_ffmpeg if resolved_ffmpeg else f"ffmpeg{exe_ext}"
+        self.ffprobe_path = resolved_ffprobe if resolved_ffprobe else f"ffprobe{exe_ext}"
+
+        self.after(0, lambda: self.ffmpeg_path_var.set(self.ffmpeg_path))
+        self.after(0, lambda: self.ffprobe_path_var.set(self.ffprobe_path))
+        self.log(f"✅ FFmpeg resolved: {self.ffmpeg_path}")
+
+    def _download_ffmpeg_automatically(self):
+        try:
+            if sys.platform == "win32":
+                url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
+            else:
+                url = "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"
+
+            zip_path = os.path.join(self.user_data_dir, "ffmpeg_download.zip")
+            urllib.request.urlretrieve(url, zip_path)
+            
+            self.log("📦 Extracting FFmpeg binaries...")
+            exe_ext = ".exe" if sys.platform == "win32" else ""
+            with zipfile.ZipFile(zip_path, 'r') as z:
+                for filename in z.namelist():
+                    if filename.endswith(f"ffmpeg{exe_ext}") or filename.endswith(f"ffprobe{exe_ext}"):
+                        source = z.open(filename)
+                        target_path = os.path.join(self.bin_dir, os.path.basename(filename))
+                        with open(target_path, "wb") as target:
+                            target.write(source.read())
+                        if sys.platform != "win32":
+                            os.chmod(target_path, 0o755)
+
+            if os.path.exists(zip_path):
+                os.remove(zip_path)
+
+            self.log("✅ FFmpeg downloaded and installed successfully!")
+            return True
+        except Exception as e:
+            self.log(f"❌ Auto-download failed: {e}. Please use 'Browse...' to link FFmpeg manually.")
+            return False
+
     def open_donate_link(self):
         webbrowser.open("https://www.paypal.com/donate/?hosted_button_id=LUT2LHRKQ27LN")
         self.log("💖 Opened PayPal donation link in browser.")
@@ -1373,6 +1556,8 @@ class GreedyMediaApp(tk.Tk):
             })
 
         config = {
+            "custom_ffmpeg": self.ffmpeg_path_var.get(),
+            "custom_ffprobe": self.ffprobe_path_var.get(),
             "custom_input_dir": self.custom_input_dir,
             "custom_output_dir": self.custom_output_dir,
             "recursive_scan": self.recursive_scan_var.get(),
@@ -1407,6 +1592,11 @@ class GreedyMediaApp(tk.Tk):
         try:
             with open(self.config_path, "r", encoding="utf-8") as f:
                 config = json.load(f)
+
+            self.custom_ffmpeg_path = config.get("custom_ffmpeg", "")
+            self.custom_ffprobe_path = config.get("custom_ffprobe", "")
+            self.ffmpeg_path_var.set(self.custom_ffmpeg_path)
+            self.ffprobe_path_var.set(self.custom_ffprobe_path)
 
             self.custom_input_dir = config.get("custom_input_dir", "")
             if self.custom_input_dir and os.path.exists(self.custom_input_dir):
@@ -1496,6 +1686,8 @@ class GreedyMediaApp(tk.Tk):
                 })
 
             config = {
+                "custom_ffmpeg": self.ffmpeg_path_var.get(),
+                "custom_ffprobe": self.ffprobe_path_var.get(),
                 "custom_input_dir": self.custom_input_dir,
                 "custom_output_dir": self.custom_output_dir,
                 "recursive_scan": self.recursive_scan_var.get(),
@@ -1523,11 +1715,11 @@ class GreedyMediaApp(tk.Tk):
 
     def _toggle_advanced_settings(self):
         if self.advanced_visible:
-            self.adv_frame.grid_forget()
+            self.adv_frame.pack_forget()
             self.toggle_adv_btn.config(text="▶ Show Advanced Transcode & Track Settings")
             self.advanced_visible = False
         else:
-            self.adv_frame.grid(row=5, column=0, columnspan=3, sticky="ew", pady=4)
+            self.adv_frame.pack(fill=tk.X, pady=(4, 6), after=self.toggle_adv_btn)
             self.toggle_adv_btn.config(text="▼ Hide Advanced Settings")
             self.advanced_visible = True
 
@@ -1807,7 +1999,19 @@ class GreedyMediaApp(tk.Tk):
             "-of", "default=noprint_wrappers=1:nokey=1", file_path
         ]
         try:
-            result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+            startupinfo = None
+            if sys.platform == "win32":
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                
+            result = subprocess.run(
+                cmd, 
+                stdout=subprocess.PIPE, 
+                stderr=subprocess.PIPE, 
+                text=True, 
+                check=True,
+                startupinfo=startupinfo
+            )
             duration_sec = float(result.stdout.strip())
             mins = int(duration_sec // 60)
             secs = int(duration_sec % 60)
@@ -1834,7 +2038,19 @@ class GreedyMediaApp(tk.Tk):
             "-of", "json", file_path
         ]
         try:
-            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+            startupinfo = None
+            if sys.platform == "win32":
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                
+            res = subprocess.run(
+                cmd, 
+                stdout=subprocess.PIPE, 
+                stderr=subprocess.PIPE, 
+                text=True, 
+                check=True,
+                startupinfo=startupinfo
+            )
             data = json.loads(res.stdout)
             streams = data.get("streams", [])
 
@@ -1852,42 +2068,40 @@ class GreedyMediaApp(tk.Tk):
             messagebox.showerror("Probe Failed", f"Could not inspect streams: {e}")
 
     def open_online_rename(self):
-        items = self.tree.get_children()
-        if not items:
-            messagebox.showinfo("Queue Empty", "No files in queue to rename.")
-            return
-
-        items_data = []
+        items = []
         for task in list(self.task_queue.queue):
-            items_data.append({
+            items.append({
                 "item_id": task["item_id"],
                 "path": task["path"],
                 "name": task.get("custom_name", os.path.basename(task["path"]))
             })
 
+        if not items:
+            messagebox.showinfo("Queue Empty", "No files in queue to rename.")
+            return
+
         t = THEMES[self.current_theme_name]
-        dlg = SmartTVDBRenamerDialog(self, items_data, t, parent_app=self)
+        dlg = SmartTVDBRenamerDialog(self, items, t, parent_app=self)
         self.wait_window(dlg)
 
         if dlg.result:
             self._handle_rename_dialog_result(dlg.result, dlg.rename_disk_immediately)
 
     def open_bulk_rename_folder_suite(self):
-        items = self.tree.get_children()
-        if not items:
-            messagebox.showinfo("Queue Empty", "No files in queue to rename.")
-            return
-
-        items_data = []
+        items = []
         for task in list(self.task_queue.queue):
-            items_data.append({
+            items.append({
                 "item_id": task["item_id"],
                 "path": task["path"],
                 "name": task.get("custom_name", os.path.basename(task["path"]))
             })
 
+        if not items:
+            messagebox.showinfo("Queue Empty", "No files in queue to rename.")
+            return
+
         t = THEMES[self.current_theme_name]
-        dlg = BulkRenameAndFolderDialog(self, items_data, t)
+        dlg = BulkRenameAndFolderDialog(self, items, t)
         self.wait_window(dlg)
 
         if dlg.result:
@@ -1918,32 +2132,54 @@ class GreedyMediaApp(tk.Tk):
                         if target_res.get("is_skipped", False):
                             skipped_count[0] += 1
                             self.log(f"⏭️ Skipped Special Episode (Left Untouched): {os.path.basename(old_path)}")
+                            self.log_rename_action(old_path, old_path, "SKIPPED_SPECIAL")
                             updated_queue.put(task)
                             continue
 
                         new_name = target_res["new_name"]
                         season_folder = target_res.get("season_folder", "")
+                        show_folder = target_res.get("show_folder", "")
                         
+                        current_dir = base_target_dir
+                        if show_folder:
+                            current_dir = os.path.join(current_dir, show_folder)
                         if season_folder:
-                            season_dir = os.path.join(base_target_dir, season_folder)
-                            os.makedirs(season_dir, exist_ok=True)
-                            new_path = os.path.join(season_dir, new_name)
-                        else:
-                            new_path = os.path.join(base_target_dir, new_name)
+                            current_dir = os.path.join(current_dir, season_folder)
+
+                        os.makedirs(current_dir, exist_ok=True)
+                        new_path = os.path.join(current_dir, new_name)
 
                         try:
                             if old_path != new_path and os.path.exists(old_path):
                                 shutil.move(old_path, new_path)
-                                session_moves.append({"current_path": new_path, "original_path": old_path, "season_dir": season_dir if season_folder else ""})
+                                session_moves.append({
+                                    "current_path": new_path, 
+                                    "original_path": old_path, 
+                                    "target_dir": current_dir,
+                                    "season_folder": season_folder,
+                                    "show_folder": show_folder
+                                })
                                 task["path"] = new_path
                                 task["custom_name"] = new_name
                                 renamed_count[0] += 1
                                 
-                                self.after(0, lambda i=item_id, n=new_name, sf=season_folder: self.tree.item(
-                                    i, values=(n, self.tree.item(i)["values"][1], self.tree.item(i)["values"][2], f"Moved to {sf} ✅" if sf else "Renamed ✅")
+                                self.log_rename_action(old_path, new_path, "SUCCESS")
+
+                                # Update tree display
+                                display_status = "Renamed ✅"
+                                if season_folder and show_folder:
+                                    display_status = f"Moved to {show_folder}/{season_folder} ✅"
+                                elif season_folder:
+                                    display_status = f"Moved to {season_folder} ✅"
+                                elif show_folder:
+                                    display_status = f"Moved to {show_folder} ✅"
+
+                                self.after(0, lambda i=item_id, n=new_name, st=display_status: self.tree.item(
+                                    i, values=(n, self.tree.item(i)["values"][1], self.tree.item(i)["values"][2], st)
                                 ))
                         except Exception as err:
                             self.log(f"❌ Failed to organize {os.path.basename(old_path)}: {err}")
+                            self.log_rename_action(old_path, new_path, f"FAILED: {err}")
                     updated_queue.put(task)
                 
                 self.task_queue = updated_queue
@@ -1997,8 +2233,10 @@ class GreedyMediaApp(tk.Tk):
                 curr_path = task["path"]
                 
                 if curr_path in path_map:
-                    orig_path = path_map[curr_path]["original_path"]
-                    season_dir = path_map[curr_path]["season_dir"]
+                    move_info = path_map[curr_path]
+                    orig_path = move_info["original_path"]
+                    target_dir = move_info.get("target_dir", "")
+                    
                     try:
                         if os.path.exists(curr_path):
                             os.makedirs(os.path.dirname(orig_path), exist_ok=True)
@@ -2007,10 +2245,17 @@ class GreedyMediaApp(tk.Tk):
                             task["custom_name"] = os.path.basename(orig_path)
                             reverted_count += 1
                             
-                            if season_dir:
+                            self.log_rename_action(curr_path, orig_path, "UNDO_REVERT")
+
+                            if target_dir and os.path.exists(target_dir):
                                 try:
-                                    if os.path.exists(season_dir) and not os.listdir(season_dir):
-                                        os.rmdir(season_dir)
+                                    # Try to remove season folder if empty
+                                    if not os.listdir(target_dir):
+                                        os.rmdir(target_dir)
+                                        # Try to remove show folder if empty
+                                        parent_show = os.path.dirname(target_dir)
+                                        if move_info.get("show_folder") and os.path.exists(parent_show) and not os.listdir(parent_show):
+                                            os.rmdir(parent_show)
                                 except Exception:
                                     pass
 
@@ -2019,6 +2264,7 @@ class GreedyMediaApp(tk.Tk):
                             ))
                     except Exception as e:
                         self.log(f"❌ Failed to revert {os.path.basename(curr_path)}: {e}")
+                        self.log_rename_action(curr_path, orig_path, f"UNDO_FAILED: {e}")
                 updated_queue.put(task)
 
             self.task_queue = updated_queue
@@ -2313,7 +2559,7 @@ class GreedyMediaApp(tk.Tk):
 
         sub_tracks_to_remove = [t.strip() for t in self.sub_track_remove_var.get().split(",") if t.strip().isdigit()]
 
-        cmd = [self.ffmpeg_path, "-y"]
+        cmd = [self.ffmpeg_path_var.get(), "-y"]
 
         if is_preview:
             cmd.extend(["-ss", preview_start])
